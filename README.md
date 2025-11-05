@@ -81,6 +81,10 @@ iface eth0 inet dhcp
 
 Lalu jalankan `ip addr flush dev eth0` dan `ifdown eth0; ifup eth0`. Selanjutnya tes apakah ip dari klien dinamis benar-benar sudah sesuai dengan `ip a | grep eth0` dan cek berdasarkan masing-masing keluarga apakah sudah sesuai dengan masing-masing rentangnya, dan jalankan juga `ping 8.8.8.8` untuk melihat apakah internet benar berjalan pada klien dinamis.
 
+![alt text](Images/soal2_a.png)
+
+![alt text](Images/soal2_b.png)
+
 Terakhir jalankan `ifup eth0` dan `ip a` pada Khamul yang kita set MAC di Aldarion dan pastikan ip yang muncul harus `192.225.3.95`
 
 
@@ -90,7 +94,7 @@ Tujuan utama soal ini adalah menjadikan Ministir sebagai Forward Proxy.
 
 Pertama pastikan sudah menjalankan `apt install -y unbound` pada Ministir. Lalu edit `/etc/unbound/unbound.conf` dengan konfigurasi berikut:
 
-```
+```c
 server:
     interface: 0.0.0.0
     port: 53
@@ -109,3 +113,121 @@ forward-zone:
     forward-addr: 192.168.122.1
 ```
 
+
+Setelah itu tambahkan ip ministir pada konfigurasi `/etc/network/interfaces` di setiap node
+
+```c
+dns-nameservers 192.225.5.2
+echo "nameserver 192.225.5.2" > /etc/resolv.conf
+```
+
+Setelah restart node lakukan verifikasi seperti berikut.
+
+![alt text](Images/soal3_a.png)
+
+
+### Soal 4
+
+
+Untuk soal ini kita membuat Master-Slave DNS. Pertama untuk konfigurasi master di Erendis.
+
+/etc/bind/named.conf.local
+
+```c
+zone "K28.com" {
+    type master;
+    file "/etc/bind/db.K28.com";
+    allow-transfer { 192.225.3.4; };  
+};
+
+zone "1.225.192.in-addr.arpa" { type master; file "/etc/bind/db.192.225.1"; allow-transfer { 192.225.3.4; }; };
+zone "2.225.192.in-addr.arpa" { type master; file "/etc/bind/db.192.225.2"; allow-transfer { 192.225.3.4; }; };
+zone "3.225.192.in-addr.arpa" { type master; file "/etc/bind/db.192.225.3"; allow-transfer { 192.225.3.4; }; };
+zone "4.225.192.in-addr.arpa" { type master; file "/etc/bind/db.192.225.4"; allow-transfer { 192.225.3.4; }; };
+zone "5.225.192.in-addr.arpa" { type master; file "/etc/bind/db.192.225.5"; allow-transfer { 192.225.3.4; }; };
+```
+
+
+/etc/bind/db.K28.com
+
+```
+\$TTL 86400
+@       IN      SOA     ns1.K28.com. admin.K28.com. (
+                        2025110201 ; Serial
+                        3600       ; Refresh
+                        1800       ; Retry
+                        604800     ; Expire
+                        86400 )    ; Minimum TTL
+        IN      NS      ns1.K28.com.
+        IN      NS      ns2.K28.com.
+
+; NS Records
+ns1     IN      A       192.225.3.3     ; Erendis
+ns2     IN      A       192.225.3.4     ; Amdir
+
+; A Records (Lokasi Penting)
+palantir    IN      A       192.225.4.3
+elros       IN      A       192.225.4.7
+pharazon    IN      A       192.225.4.4
+elendil     IN      A       192.225.1.2
+isildur     IN      A       192.225.1.3
+anarion     IN      A       192.225.1.4
+galadriel   IN      A       192.225.2.5
+celeborn    IN      A       192.225.2.6
+oropher     IN      A       192.225.2.7
+```
+
+
+/etc/bind/db.192.225.x
+
+```c
+@       IN      SOA     ns1.K28.com. admin.K28.com. (
+                        2025110201
+                        3600 1800 604800 86400 )
+        IN      NS      ns1.K28.com.
+        IN      NS      ns2.K28.com.
+
+1       IN      PTR     durin.K28.com.
+x       IN      PTR     x.K28.com.
+```
+
+
+Konfigurasi pada Amdir, `/etc/bind/named.conf.local` 
+
+```
+zone "K28.com" {
+    type slave;
+    file "/var/cache/bind/db.K28.com";
+    masters { 192.225.3.3; };  }; 
+
+zone "1.225.192.in-addr.arpa" { type slave; file "/var/cache/bind/db.192.225.1"; masters { 192.225.3.3; }; };
+zone "2.225.192.in-addr.arpa" { type slave; file "/var/cache/bind/db.192.225.2"; masters { 192.225.3.3; }; };
+zone "3.225.192.in-addr.arpa" { type slave; file "/var/cache/bind/db.192.225.3"; masters { 192.225.3.3; }; };
+zone "4.225.192.in-addr.arpa" { type slave; file "/var/cache/bind/db.192.225.4"; masters { 192.225.3.3; }; };
+zone "5.225.192.in-addr.arpa" { type slave; file "/var/cache/bind/db.192.225.5"; masters { 192.225.3.3; }; };
+```
+
+Setelah itu jalankan `named -g` pada kedua node dan lakukan tes dengan `@192.225.3.3 K28.com` dan `@192.225.3.4 K28.com` di node lain.
+
+![alt text](Images/soal4_a.png)
+
+![alt text](Images/soal4_b.png)
+
+
+### Soal 5
+
+Pertama update di `/etc/bind/db.K28.com` Erendis
+
+```
+; CNAME
+www     IN      CNAME   K28.com.
+
+; TXT Records (Pesan Rahasia)
+elros       IN      TXT     "Cincin Sauron"
+pharazon    IN      TXT     "Aliansi Terakhir"
+```
+
+Lalu verifikasi di node lain dengan `dig @192.225.3.3 www.K28.com `, `dig elros.K28.com TXT`,
+dan `dig pharazon.K28.com TXT`.
+
+![alt text](Images/soal5_a.png)
